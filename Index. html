@@ -1,1 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waste Classification Camera</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: black;
+        }
+
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #captureBtn {
+            position: absolute;
+            bottom: 30px;
+            width: 70px;
+            height: 70px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #loadingOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        #loadingAnimation {
+            width: 100px;
+            height: 100px;
+        }
+
+        #resultOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+            font-size: 2em;
+            font-weight: bold;
+            z-index: 999;
+            transition: background-color 0.5s ease;
+            text-align: center;
+        }
+
+        #resultVideo {
+            width: 150px;
+            height: 150px;
+            margin-top: 20px;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body>
+
+    <video id="videoElement" autoplay></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+
+    <button id="captureBtn"></button>
+
+    <div id="loadingOverlay">
+        <video id="loadingAnimation" autoplay loop muted playsinline>
+            <source src="Animation.webm" type="video/webm">
+        </video>
+    </div>
+
+    <div id="resultOverlay">
+        <div id="resultText"></div>
+        <video id="resultVideo" autoplay loop muted playsinline>
+            <source src="dustbin.webm" type="video/webm">
+        </video>
+    </div>
+
+    <!-- Audio files for sounds -->
+    <audio id="loadingSound" src="loading.mp3"></audio>
+    <audio id="biodegradableSound" src="biodegradable.mp3"></audio>
+    <audio id="nonbiodegradableSound" src="nonbiodegradable.mp3"></audio>
+    <audio id="recyclableSound" src="recyclable.mp3"></audio>
+
+    <script>
+        const API_KEY = 'AIzaSyBaV1DR8cXEDJ2RQoqYOT_ZsjFyvKZrZIY';
+        
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvas');
+        const captureBtn = document.getElementById('captureBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const resultOverlay = document.getElementById('resultOverlay');
+        const resultText = document.getElementById('resultText');
+        const resultVideo = document.getElementById('resultVideo');
+        
+        // Audio elements
+        const loadingSound = document.getElementById('loadingSound');
+        const biodegradableSound = document.getElementById('biodegradableSound');
+        const nonbiodegradableSound = document.getElementById('nonbiodegradableSound');
+        const recyclableSound = document.getElementById('recyclableSound');
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error('Error:', err);
+                alert('Error accessing camera. Please ensure camera permissions are granted.');
+            }
+        }
+
+        startCamera();
+
+        captureBtn.addEventListener('click', async () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+            // Show loading overlay, play loading sound
+            loadingOverlay.style.display = 'flex';
+            playAudio(loadingSound);
+
+            try {
+                const classification = await classifyWaste(imageBase64);
+
+                // Stop loading sound
+                stopAudio(loadingSound);
+
+                // Display result overlay, play respective sound
+                resultOverlay.style.display = 'flex';
+                switch(classification) {
+                    case 'biodegradable':
+                        resultOverlay.style.backgroundColor = '#00ff00';
+                        resultText.textContent = 'Biodegradable Waste';
+                        playAudio(biodegradableSound);
+                        break;
+                    case 'nonbiodegradable':
+                        resultOverlay.style.backgroundColor = '#ff0000';
+                        resultText.textContent = 'Non-Biodegradable Waste';
+                        playAudio(nonbiodegradableSound);
+                        break;
+                    case 'recyclable':
+                        resultOverlay.style.backgroundColor = '#0000ff';
+                        resultText.textContent = 'Recyclable Waste';
+                        playAudio(recyclableSound);
+                        break;
+                    default:
+                        resultOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                        resultText.textContent = 'Unknown';
+                }
+
+                resultVideo.load();
+                resultVideo.play();
+
+                // Hide result overlay after 10 seconds and stop audio
+                setTimeout(() => {
+                    resultOverlay.style.display = 'none';
+                    stopAudio(biodegradableSound);
+                    stopAudio(nonbiodegradableSound);
+                    stopAudio(recyclableSound);
+                }, 10000);
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        });
+
+        function playAudio(audioElement) {
+            audioElement.currentTime = 0;
+            audioElement.play();
+        }
+
+        function stopAudio(audioElement) {
+            audioElement.pause();
+            audioElement.currentTime = 0;
+        }
+
+        async function classifyWaste(imageBase64) {
+            const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+            const prompt = "Analyze this image and classify the waste type. Answer in one word only: biodegradable, nonbiodegradable, or recyclable.";
+
+            const base64Image = imageBase64.split(',')[1];
+
+            const requestData = {
+                contents: [{
+                    parts: [{
+                        text: prompt
+                    }, {
+                        inline_data: {
+                            mime_type: "image/jpeg",
+                            data: base64Image
+                        }
+                    }]
+                }],
+                generation_config: {
+                    temperature: 0.1,
+                    top_p: 0.8,
+                    top_k: 10,
+                    max_output_tokens: 1024
+                },
+                safety_settings: [
+                    {
+                        category: "HARM_CATEGORY_HARASSMENT",
+                        threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        category: "HARM_CATEGORY_HATE_SPEECH",
+                        threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                    }
+                ]
+            };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || 'API request failed');
+                }
+
+                const data = await response.json();
+                if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+                    throw new Error('Invalid response format from API');
+                }
+
+                const classification = data.candidates[0].content.parts[0].text
+                    .toLowerCase()
+                    .trim()
+                    .replace(/[^a-z]/g, '');
+
+                const validResponses = ['biodegradable', 'nonbiodegradable', 'recyclable'];
+                if (!validResponses.includes(classification)) {
+                    throw new Error('Invalid classification received');
+                }
+
+                return classification;
+            } catch (error) {
+                console.error('Classification error:', error);
+                throw error;
+            }
+        }
+    </script>
+</body>
+</html>
 
