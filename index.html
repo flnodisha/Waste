@@ -48,12 +48,12 @@
             display: none;
             justify-content: center;
             align-items: center;
-            z-index: 1000;
+            z-index: 10000;
         }
 
         #loadingAnimation {
-            width: 100px;
-            height: 100px;
+            width: 350px;
+            height: 350px;
         }
 
         #resultOverlay {
@@ -66,7 +66,7 @@
             justify-content: center;
             align-items: center;
             flex-direction: column;
-            color: white;
+            color: black;
             font-size: 2em;
             font-weight: bold;
             z-index: 999;
@@ -74,11 +74,38 @@
             text-align: center;
         }
 
+        #resultText {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #itemName {
+            font-size: 0.8em;
+        }
+
         #resultVideo {
-            width: 150px;
-            height: 150px;
+            width: 350px;
+            height: 350px;
             margin-top: 20px;
             z-index: 9999;
+        }
+
+        #retryButton {
+            padding: 10px 20px;
+            margin-top: 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.6em;
+            display: none;
+        }
+
+        #retryButton:hover {
+            background-color: #45a049;
         }
     </style>
 </head>
@@ -91,22 +118,23 @@
 
     <div id="loadingOverlay">
         <video id="loadingAnimation" autoplay loop muted playsinline>
-            <source src="Animation.webm" type="video/webm">
+            <source src="loading.webm" type="video/webm">
         </video>
     </div>
 
     <div id="resultOverlay">
-        <div id="resultText"></div>
-        <video id="resultVideo" autoplay loop muted playsinline>
-            <source src="dustbin.webm" type="video/webm">
-        </video>
+        <div id="resultText">
+            <div id="wasteType"></div>
+            <div id="itemName"></div>
+        </div>
+        <video id="resultVideo" autoplay loop muted playsinline></video>
+        <button id="retryButton">Try Again</button>
     </div>
 
-    <!-- Audio files for sounds -->
     <audio id="loadingSound" src="loading.mp3"></audio>
-    <audio id="biodegradableSound" src="biodegradable.mp3"></audio>
-    <audio id="nonbiodegradableSound" src="nonbiodegradable.mp3"></audio>
-    <audio id="recyclableSound" src="recyclable.mp3"></audio>
+    <audio id="biodegradableSound" src="bio.mp3"></audio>
+    <audio id="nonbiodegradableSound" src="nonbio.mp3"></audio>
+    <audio id="recyclableSound" src="recycle.mp3"></audio>
 
     <script>
         const API_KEY = 'AIzaSyBaV1DR8cXEDJ2RQoqYOT_ZsjFyvKZrZIY';
@@ -116,10 +144,11 @@
         const captureBtn = document.getElementById('captureBtn');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const resultOverlay = document.getElementById('resultOverlay');
-        const resultText = document.getElementById('resultText');
+        const wasteType = document.getElementById('wasteType');
+        const itemName = document.getElementById('itemName');
         const resultVideo = document.getElementById('resultVideo');
+        const retryButton = document.getElementById('retryButton');
         
-        // Audio elements
         const loadingSound = document.getElementById('loadingSound');
         const biodegradableSound = document.getElementById('biodegradableSound');
         const nonbiodegradableSound = document.getElementById('nonbiodegradableSound');
@@ -143,55 +172,75 @@
 
         startCamera();
 
+        function hideResult() {
+            resultOverlay.style.display = 'none';
+            retryButton.style.display = 'none';
+            stopAudio(biodegradableSound);
+            stopAudio(nonbiodegradableSound);
+            stopAudio(recyclableSound);
+        }
+
+        retryButton.addEventListener('click', () => {
+            hideResult();
+        });
+
         captureBtn.addEventListener('click', async () => {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             canvas.getContext('2d').drawImage(video, 0, 0);
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
 
-            // Show loading overlay, play loading sound
             loadingOverlay.style.display = 'flex';
             playAudio(loadingSound);
 
             try {
-                const classification = await classifyWaste(imageBase64);
+                const { classification, itemDetected } = await classifyWaste(imageBase64);
 
-                // Stop loading sound
                 stopAudio(loadingSound);
+                retryButton.style.display = 'none';
 
-                // Display result overlay, play respective sound
                 resultOverlay.style.display = 'flex';
-                switch(classification) {
-                    case 'biodegradable':
-                        resultOverlay.style.backgroundColor = '#00ff00';
-                        resultText.textContent = 'Biodegradable Waste';
-                        playAudio(biodegradableSound);
-                        break;
-                    case 'nonbiodegradable':
-                        resultOverlay.style.backgroundColor = '#ff0000';
-                        resultText.textContent = 'Non-Biodegradable Waste';
-                        playAudio(nonbiodegradableSound);
-                        break;
-                    case 'recyclable':
-                        resultOverlay.style.backgroundColor = '#0000ff';
-                        resultText.textContent = 'Recyclable Waste';
-                        playAudio(recyclableSound);
-                        break;
-                    default:
-                        resultOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-                        resultText.textContent = 'Unknown';
+                
+                if (classification === 'unknown') {
+                    resultOverlay.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+                    wasteType.textContent = 'Unknown Object';
+                    wasteType.style.color = 'black';
+                    itemName.style.color = 'black';
+                    retryButton.style.display = 'block';
+                    resultVideo.style.display = 'none';
+                } else {
+                    retryButton.style.display = 'none';
+                    resultVideo.style.display = 'block';
+                    
+                    switch(classification) {
+                        case 'biodegradable':
+                            resultOverlay.style.backgroundColor = '#b9fab9';
+                            wasteType.textContent = 'Biodegradable Waste';
+                            playAudio(biodegradableSound);
+                            resultVideo.src = 'bio.webm';
+                            break;
+                        case 'nonbiodegradable':
+                            resultOverlay.style.backgroundColor = '#f87b7b';
+                            wasteType.textContent = 'Non-Biodegradable Waste';
+                            playAudio(nonbiodegradableSound);
+                            resultVideo.src = 'nonbio.webm';
+                            break;
+                        case 'recyclable':
+                            resultOverlay.style.backgroundColor = '#918ff9';
+                            wasteType.textContent = 'Recyclable Waste';
+                            playAudio(recyclableSound);
+                            resultVideo.src = 'recycle.webm';
+                            break;
+                    }
                 }
 
+                itemName.textContent = `Detected Item: ${itemDetected}`;
                 resultVideo.load();
                 resultVideo.play();
 
-                // Hide result overlay after 10 seconds and stop audio
-                setTimeout(() => {
-                    resultOverlay.style.display = 'none';
-                    stopAudio(biodegradableSound);
-                    stopAudio(nonbiodegradableSound);
-                    stopAudio(recyclableSound);
-                }, 10000);
+                if (classification !== 'unknown') {
+                    setTimeout(hideResult, 10000);
+                }
             } catch (error) {
                 console.error('Error:', error);
                 alert(`Error: ${error.message}`);
@@ -212,7 +261,7 @@
 
         async function classifyWaste(imageBase64) {
             const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
-            const prompt = "Analyze this image and classify the waste type. Answer in one word only: biodegradable, nonbiodegradable, or recyclable.";
+            const prompt = "Analyze this image and provide two pieces of information in the following format only: 'Classification: [biodegradable/nonbiodegradable/recyclable], Item: [name of the item]'. If you cannot identify the item or classify it, respond with 'Classification: unknown, Item: Unknown object'";
 
             const base64Image = imageBase64.split(',')[1];
 
@@ -264,17 +313,14 @@
                     throw new Error('Invalid response format from API');
                 }
 
-                const classification = data.candidates[0].content.parts[0].text
-                    .toLowerCase()
-                    .trim()
-                    .replace(/[^a-z]/g, '');
+                const responseText = data.candidates[0].content.parts[0].text;
+                const classificationMatch = responseText.match(/Classification:\s*(biodegradable|nonbiodegradable|recyclable|unknown)/i);
+                const itemMatch = responseText.match(/Item:\s*([^,\n]+)/i);
 
-                const validResponses = ['biodegradable', 'nonbiodegradable', 'recyclable'];
-                if (!validResponses.includes(classification)) {
-                    throw new Error('Invalid classification received');
-                }
+                const classification = classificationMatch ? classificationMatch[1].toLowerCase() : 'unknown';
+                const itemDetected = itemMatch ? itemMatch[1].trim() : 'Unknown object';
 
-                return classification;
+                return { classification, itemDetected };
             } catch (error) {
                 console.error('Classification error:', error);
                 throw error;
@@ -283,4 +329,3 @@
     </script>
 </body>
 </html>
-
