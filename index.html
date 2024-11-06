@@ -212,13 +212,13 @@
                     switch(classification) {
                         case 'biodegradable':
                             resultOverlay.style.backgroundColor = '#b9fab9';
-                            wasteType.textContent = 'Biodegradable Waste';
+                            wasteType.textContent = 'Biodegradable Waste (ମାଟିରେ ମିଶିଯିବ)';
                             playAudio(biodegradableSound);
                             resultVideo.src = 'bio.webm';
                             break;
                         case 'nonbiodegradable':
                             resultOverlay.style.backgroundColor = '#f87b7b';
-                            wasteType.textContent = 'Non-Biodegradable Waste';
+                            wasteType.textContent = 'Non-Biodegradable Waste(ମାଟିରେ ମିଶିବ ନାହିଁ)';
                             playAudio(nonbiodegradableSound);
                             resultVideo.src = 'nonbio.webm';
                             break;
