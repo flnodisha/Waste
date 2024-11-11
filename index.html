@@ -155,6 +155,84 @@
     <script>
         const API_KEY = 'AIzaSyBaV1DR8cXEDJ2RQoqYOT_ZsjFyvKZrZIY';
         
+        // Add this code right after your API_KEY constant, before the element declarations
+let lastVolumeLevel = 0;
+let lastCaptureTime = 0;
+const CAPTURE_COOLDOWN = 1000; // 1 second cooldown between captures
+
+// Initialize volume processor
+async function initVolumeProcessor() {
+    if ('audioWorklet' in AudioContext.prototype) {
+        try {
+            const audioContext = new AudioContext();
+            await audioContext.audioWorklet.addModule('volume-processor.js');
+            
+            const oscillator = audioContext.createOscillator();
+            const volumeProcessor = new AudioWorkletNode(audioContext, 'volume-processor');
+            
+            volumeProcessor.port.onmessage = (event) => {
+                const currentVolume = event.data;
+                const currentTime = Date.now();
+                
+                // Check if volume increased significantly and cooldown period has passed
+                if (currentVolume > lastVolumeLevel + 0.2 && 
+                    currentTime - lastCaptureTime >= CAPTURE_COOLDOWN) {
+                    lastCaptureTime = currentTime;
+                    triggerCapture();
+                }
+                lastVolumeLevel = currentVolume;
+            };
+            
+            oscillator.connect(volumeProcessor).connect(audioContext.destination);
+            oscillator.start();
+        } catch (error) {
+            console.error('Volume processor initialization failed:', error);
+        }
+    }
+}
+
+// Function to trigger capture
+function triggerCapture() {
+    const currentTime = Date.now();
+    if (currentTime - lastCaptureTime >= CAPTURE_COOLDOWN) {
+        lastCaptureTime = currentTime;
+        captureBtn.click();
+    }
+}
+
+// Add event listeners for volume buttons
+document.addEventListener('keydown', function(event) {
+    if (event.code === 'VolumeUp' || event.key === 'AudioVolumeUp') {
+        event.preventDefault();
+        triggerCapture();
+    }
+});
+
+// Add event listener for the volume up button event (works on some mobile devices)
+window.addEventListener('volumeupbutton', function(event) {
+    event.preventDefault();
+    triggerCapture();
+});
+
+// Media Session API support
+if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('previoustrack', function() {
+        triggerCapture();
+    });
+}
+
+// Initialize volume processor when the page loads
+initVolumeProcessor();
+
+// Add additional volume tracking method
+document.addEventListener('volumechange', function(event) {
+    const currentTime = Date.now();
+    if (currentTime - lastCaptureTime >= CAPTURE_COOLDOWN) {
+        lastCaptureTime = currentTime;
+        triggerCapture();
+    }
+});
+        
         const video = document.getElementById('videoElement');
         const canvas = document.getElementById('canvas');
         const captureBtn = document.getElementById('captureBtn');
