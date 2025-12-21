@@ -3,52 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Waste Classifier</title>
+    <title>Waste Classifier - PM Shri School</title>
     <style>
-        body, html { margin: 0; height: 100%; background: #0f172a; color: white; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
-        #header { width: 100%; text-align: center; background: #1e293b; padding: 15px 0; font-size: 1.2rem; font-weight: bold; border-bottom: 2px solid #4CAF50; }
-        video { width: 100%; height: 70%; object-fit: cover; }
-        #captureBtn { margin-top: 20px; width: 80px; height: 80px; background: white; border: 6px solid #4CAF50; border-radius: 50%; cursor: pointer; box-shadow: 0 0 15px rgba(76, 175, 80, 0.4); }
-        .overlay { position: fixed; inset: 0; display: none; flex-direction: column; justify-content: center; align-items: center; background: rgba(255,255,255,0.95); color: #1e293b; z-index: 100; text-align: center; padding: 20px; }
-        .retry-btn { margin-top: 20px; padding: 12px 30px; background: #1e293b; color: white; border: none; border-radius: 25px; cursor: pointer; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: white; font-family: sans-serif; overflow: hidden; }
+        #header { position: absolute; top: 0; width: 100%; text-align: center; background: rgba(0,0,0,0.8); padding: 15px 0; z-index: 10; font-size: 1.2rem; border-bottom: 2px solid #4CAF50; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #captureBtn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 80px; height: 80px; background: white; border: 6px solid #4CAF50; border-radius: 50%; cursor: pointer; z-index: 11; }
+        .overlay { position: fixed; inset: 0; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; text-align: center; padding: 20px; box-sizing: border-box; }
+        #loading { background: white; color: #4CAF50; }
+        #result { color: #000; }
+        .retry-btn { margin-top: 25px; padding: 12px 30px; background: #333; color: white; border: none; border-radius: 25px; cursor: pointer; font-size: 1rem; }
     </style>
 </head>
 <body>
 
-<div id="header">PM Shri School Waste Classifier</div>
+<div id="header">ପି. ଏମ୍. ଶ୍ରୀ ସରକାରୀ ଉଚ୍ଚ ବିଦ୍ୟାଳୟ, ଜଗନ୍ନାଥପୁର</div>
 <video id="cam" autoplay playsinline></video>
 <canvas id="cv" style="display:none;"></canvas>
 <button id="captureBtn"></button>
 
-<div id="loading" class="overlay" style="background: #0f172a; color: #4CAF50;">
-    <h2>Analysing Waste...</h2>
-    <p>Please wait while AI identifies the item.</p>
+<div id="loading" class="overlay">
+    <h2>ବିଶ୍ଳେଷଣ ଚାଲିଛି...</h2>
+    <p>Please hold the item still.</p>
 </div>
 
 <div id="result" class="overlay">
     <h1 id="wasteTitle"></h1>
-    <p id="itemName" style="font-size: 1.2rem;"></p>
-    <button class="retry-btn" onclick="location.reload()">Try Again</button>
+    <p id="itemName" style="font-size: 1.3rem;"></p>
+    <button class="retry-btn" onclick="location.reload()">Try Again / ପୁଣିଥରେ</button>
 </div>
 
 <script>
-    // 1. YOUR API KEY (Ensure this key is from the project with billing enabled)
-    const API_KEY = "AIzaSyBdVv6PL2d0imbo6DLXjn5uwqDEqTUa4os";
+    // --- STEP 1: CONFIGURATION ---
+    const API_KEY = "AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs";
     
-    // 2. We use two models. If one is "Not Found", it tries the other.
+    // We use the "-latest" suffix to ensure the API finds the model
     const PRIMARY_MODEL = "gemini-1.5-flash-latest"; 
     const FALLBACK_MODEL = "gemini-1.5-pro-latest";
 
     const cam = document.getElementById("cam");
     const cv = document.getElementById("cv");
 
-    navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}})
-        .then(s => cam.srcObject = s).catch(() => alert("Camera Access Required"));
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(s => cam.srcObject = s).catch(() => alert("Camera blocked! Check permissions."));
 
     document.getElementById("captureBtn").onclick = async () => {
         if (!cam.videoWidth) return;
-        
-        // 3. Resize and compress to prevent "Request Payload Too Large"
+
+        // Resize image to 50% to prevent network timeouts
         cv.width = cam.videoWidth / 2;
         cv.height = cam.videoHeight / 2;
         cv.getContext("2d").drawImage(cam, 0, 0, cv.width, cv.height);
@@ -59,11 +61,12 @@
         try {
             let result;
             try {
-                // Try Primary Model
+                // Try with the Flash model first
                 result = await callGemini(imgBase64, PRIMARY_MODEL);
             } catch (err) {
-                if (err.message.includes("not found")) {
-                    console.warn("Primary model not found, trying fallback...");
+                // If "Not Found", try the Pro model automatically
+                if (err.message.toLowerCase().includes("not found")) {
+                    console.warn("Primary model not found, attempting fallback...");
                     result = await callGemini(imgBase64, FALLBACK_MODEL);
                 } else {
                     throw err;
@@ -77,7 +80,7 @@
     };
 
     async function callGemini(base64, modelName) {
-        // 4. Using v1beta with the "-latest" suffix is the most stable configuration
+        // FIXED: Using v1beta as locked endpoint for browser compatibility
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
         
         const response = await fetch(url, {
@@ -86,15 +89,22 @@
             body: JSON.stringify({
                 contents: [{
                     parts: [
-                        { text: "Classify as 'biodegradable' or 'nonbiodegradable'. Respond only: Class: [type], Item: [name]" },
-                        { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                        { text: "Classify as 'biodegradable' or 'nonbiodegradable'. Format response exactly: Class: [type], Name: [item]" },
+                        { inline_data: { mime_type: "image/jpeg", data: base64 } } // Corrected property
                     ]
                 }]
             })
         });
 
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error?.message || "API Error");
+        
+        if (!response.ok) {
+            // Handle quota specifically
+            if (data.error?.message.includes("quota")) {
+                throw new Error("Quota Full: Daily free limit reached.");
+            }
+            throw new Error(data.error?.message || "Connection failed");
+        }
 
         const text = data.candidates[0].content.parts[0].text;
         return {
@@ -108,7 +118,7 @@
         const resDiv = document.getElementById("result");
         resDiv.style.display = "flex";
         resDiv.style.backgroundColor = isNonBio ? "#fee2e2" : "#f0fdf4";
-        document.getElementById("wasteTitle").innerText = isNonBio ? "Non-Biodegradable" : "Biodegradable";
+        document.getElementById("wasteTitle").innerText = isNonBio ? "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ" : "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
         document.getElementById("itemName").innerText = "Item: " + name;
     }
 </script>
