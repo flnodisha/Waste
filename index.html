@@ -3,12 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Waste Classifier – PM Shri School</title>
+<title>Waste Classifier – School Demo</title>
 
 <style>
 html,body{
   margin:0;
-  padding:0;
   height:100%;
   background:black;
   font-family:sans-serif;
@@ -62,7 +61,7 @@ button{
 
 <body>
 
-<div id="header">ପି.ଏମ୍. ଶ୍ରୀ ସରକାରୀ ଉଚ୍ଚ ବିଦ୍ୟାଳୟ</div>
+<div id="header">PM Shri School – Waste Classifier</div>
 
 <video id="cam" autoplay playsinline></video>
 <canvas id="cv" hidden></canvas>
@@ -75,7 +74,7 @@ button{
 </div>
 
 <script>
-// ⚠️ TEMPORARY KEY – REMOVE AFTER DEMO
+// ⚠️ TEMPORARY – REMOVE AFTER DEMO
 const API_KEY = "AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs";
 const MODEL = "gemini-1.5-pro";
 
@@ -84,7 +83,7 @@ const cv = document.getElementById("cv");
 
 navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
 .then(s => cam.srcObject = s)
-.catch(()=>alert("Allow camera"));
+.catch(()=>alert("Please allow camera"));
 
 document.getElementById("btn").onclick = async ()=>{
   if(!cam.videoWidth) return;
@@ -108,18 +107,33 @@ document.getElementById("btn").onclick = async ()=>{
         body: JSON.stringify({
           contents:[{
             parts:[
-              {text:"Identify waste. Reply only: Class: Biodegradable or Non-Biodegradable, Name: item"},
-              {inline_data:{mime_type:"image/jpeg",data:img}}
+              {
+                text:
+                "Identify the waste item. Reply ONLY in this format: Class: Biodegradable or Non-Biodegradable, Name: item"
+              },
+              {
+                inlineData:{          // ✅ FIXED
+                  mimeType:"image/jpeg",
+                  data:img
+                }
+              }
             ]
           }],
-          generationConfig:{temperature:0.1,maxOutputTokens:50}
+          generationConfig:{
+            temperature:0.1,
+            maxOutputTokens:50
+          }
         })
       }
     );
 
     const data = await res.json();
-    const text = data.candidates[0].content.parts[0].text.toLowerCase();
 
+    if(!data.candidates){
+      throw new Error("API failed");
+    }
+
+    const text = data.candidates[0].content.parts[0].text.toLowerCase();
     document.getElementById("name").innerText=text;
 
     if(text.includes("non")){
@@ -129,8 +143,9 @@ document.getElementById("btn").onclick = async ()=>{
       document.getElementById("type").innerText="Biodegradable";
       document.getElementById("overlay").style.background="#c8e6c9";
     }
+
   }catch(e){
-    alert("Error");
+    alert("Network / API error. Try again.");
     reset();
   }
 };
