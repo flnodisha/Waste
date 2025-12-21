@@ -37,9 +37,12 @@
     // --- STEP 1: CONFIGURATION ---
     const API_KEY = "AIzaSyBdVv6PL2d0imbo6DLXjn5uwqDEqTUa4os";
     
-    // We use the "-latest" suffix to ensure the API finds the model
-    const PRIMARY_MODEL = "gemini-1.5-flash-latest"; 
-    const FALLBACK_MODEL = "gemini-1.5-pro-latest";
+    // We use standard names without suffixes for better compatibility
+    const MODELS = [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-pro-vision"
+    ];
 
     const cam = document.getElementById("cam");
     const cv = document.getElementById("cv");
@@ -50,7 +53,6 @@
     document.getElementById("captureBtn").onclick = async () => {
         if (!cam.videoWidth) return;
 
-        // Resize image to 50% to prevent network timeouts
         cv.width = cam.videoWidth / 2;
         cv.height = cam.videoHeight / 2;
         cv.getContext("2d").drawImage(cam, 0, 0, cv.width, cv.height);
@@ -59,20 +61,27 @@
         document.getElementById("loading").style.display = "flex";
 
         try {
-            let result;
-            try {
-                // Try with the Flash model first
-                result = await callGemini(imgBase64, PRIMARY_MODEL);
-            } catch (err) {
-                // If "Not Found", try the Pro model automatically
-                if (err.message.toLowerCase().includes("not found")) {
-                    console.warn("Primary model not found, attempting fallback...");
-                    result = await callGemini(imgBase64, FALLBACK_MODEL);
-                } else {
-                    throw err;
+            let success = false;
+            let lastError = "";
+
+            // Loop through models until one works
+            for (let modelName of MODELS) {
+                try {
+                    console.log("Trying model: " + modelName);
+                    const result = await callGemini(imgBase64, modelName);
+                    showResult(result.isNonBio, result.name);
+                    success = true;
+                    break; 
+                } catch (err) {
+                    console.error(modelName + " failed: " + err.message);
+                    lastError = err.message;
                 }
             }
-            showResult(result.isNonBio, result.name);
+
+            if (!success) {
+                throw new Error(lastError || "All models failed. Check if API is enabled in Cloud Console.");
+            }
+
         } catch (err) {
             alert("System Error: " + err.message);
             document.getElementById("loading").style.display = "none";
@@ -80,7 +89,7 @@
     };
 
     async function callGemini(base64, modelName) {
-        // FIXED: Using v1beta as locked endpoint for browser compatibility
+        // v1beta is the best choice for these specific models
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
         
         const response = await fetch(url, {
@@ -89,8 +98,8 @@
             body: JSON.stringify({
                 contents: [{
                     parts: [
-                        { text: "Classify as 'biodegradable' or 'nonbiodegradable'. Format response exactly: Class: [type], Name: [item]" },
-                        { inline_data: { mime_type: "image/jpeg", data: base64 } } // Corrected property
+                        { text: "Task: Identify if the waste item is biodegradable or nonbiodegradable. Reply only as - Class: [type], Name: [item]" },
+                        { inline_data: { mime_type: "image/jpeg", data: base64 } }
                     ]
                 }]
             })
@@ -99,17 +108,17 @@
         const data = await response.json();
         
         if (!response.ok) {
-            // Handle quota specifically
-            if (data.error?.message.includes("quota")) {
-                throw new Error("Quota Full: Daily free limit reached.");
-            }
             throw new Error(data.error?.message || "Connection failed");
+        }
+
+        if (!data.candidates || !data.candidates[0].content) {
+            throw new Error("AI could not see the item clearly.");
         }
 
         const text = data.candidates[0].content.parts[0].text;
         return {
             isNonBio: text.toLowerCase().includes("non"),
-            name: text.split("Name:")[1]?.trim() || "Item"
+            name: text.split("Name:")[1]?.trim() || "Waste Item"
         };
     }
 
