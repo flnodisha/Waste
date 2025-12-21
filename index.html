@@ -1,142 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Waste Classifier – School Demo</title>
-
-<style>
-html,body{
-  margin:0;
-  height:100%;
-  background:black;
-  font-family:sans-serif;
-  overflow:hidden;
-}
-#header{
-  position:fixed;
-  top:0;
-  width:100%;
-  background:#000c;
-  color:white;
-  text-align:center;
-  padding:12px;
-  z-index:10;
-}
-video{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-}
-#btn{
-  position:fixed;
-  bottom:30px;
-  left:50%;
-  transform:translateX(-50%);
-  width:80px;
-  height:80px;
-  border-radius:50%;
-  background:white;
-  border:6px solid #4CAF50;
-  z-index:20;
-  cursor: pointer;
-}
-#overlay{
-  position:fixed;
-  inset:0;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  flex-direction:column;
-  background:white;
-  color:black;
-  text-align:center;
-  z-index: 100;
-}
-button{
-  margin-top:20px;
-  padding:10px 30px;
-  font-size:16px;
-  cursor: pointer;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Waste Classifier - PM Shri School</title>
+    <style>
+        :root { --primary: #4CAF50; --bg: #0f172a; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: white; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        #header { position: absolute; top: 0; width: 100%; text-align: center; background: rgba(15, 23, 42, 0.9); padding: 20px 0; z-index: 10; font-size: 1.4rem; font-weight: bold; border-bottom: 1px solid #334155; }
+        #camView { width: 100%; height: 100%; object-fit: cover; }
+        #captureBtn { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); width: 85px; height: 85px; background: white; border: 8px solid var(--primary); border-radius: 50%; cursor: pointer; z-index: 11; transition: transform 0.2s; box-shadow: 0 0 30px rgba(76, 175, 80, 0.4); }
+        #captureBtn:active { transform: translateX(-50%) scale(0.9); }
+        
+        .overlay { position: fixed; inset: 0; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; text-align: center; padding: 30px; }
+        #loading { background: rgba(15, 23, 42, 0.95); }
+        #result { background: white; color: #1e293b; }
+        
+        .spinner { width: 60px; height: 60px; border: 6px solid #f3f3f3; border-top: 6px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        #resVideo { width: 220px; height: 220px; border-radius: 20px; margin: 20px 0; object-fit: contain; }
+        .retry-btn { padding: 15px 40px; background: #1e293b; color: white; border: none; border-radius: 50px; cursor: pointer; font-size: 1.1rem; font-weight: bold; }
+    </style>
 </head>
-
 <body>
 
-<div id="header">PM Shri School – Waste Classifier</div>
+<div id="header">ପି. ଏମ୍. ଶ୍ରୀ ସରକାରୀ ଉଚ୍ଚ ବିଦ୍ୟାଳୟ, ଜଗନ୍ନାଥପୁର</div>
 
-<video id="cam" autoplay playsinline></video>
-<canvas id="cv" style="display:none;"></canvas>
-<div id="btn"></div>
+<video id="camView" autoplay playsinline></video>
+<canvas id="helperCanvas" style="display:none;"></canvas>
+<button id="captureBtn"></button>
 
-<div id="overlay">
-  <h1 id="type">Analysing...</h1>
-  <p id="name" style="font-size: 1.2rem;"></p>
-  <button onclick="reset()">Try Again</button>
+<div id="loading" class="overlay">
+    <div class="spinner"></div>
+    <h2 style="color: var(--primary)">ବିଶ୍ଳେଷଣ ଚାଲିଛି...</h2>
+    <p>AI is identifying your waste item...</p>
 </div>
 
+<div id="result" class="overlay">
+    <h1 id="wasteTitle" style="font-size: 2.5rem; margin: 0;"></h1>
+    <p id="itemName" style="font-size: 1.4rem; color: #64748b; margin: 10px 0;"></p>
+    <video id="resVideo" autoplay loop muted playsinline></video>
+    <button class="retry-btn" onclick="resetUI()">Try Again / ପୁଣିଥରେ</button>
+</div>
+
+<audio id="audioL" src="loading.mp3"></audio>
+<audio id="audioB" src="bio.mp3"></audio>
+<audio id="audioNB" src="nonbio.mp3"></audio>
+
 <script>
-const API_KEY = "AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs";
-// Updated to the latest stable model as of late 2025
-const MODEL = "gemini-2.0-flash"; 
+    // --- CONFIGURATION ---
+    const API_KEY = 'AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs'; 
+    const MODEL = "gemini-1.5-flash"; // Optimized for Free Tier
 
-document.getElementById("btn").onclick = async () => {
-  if(!cam.videoWidth) return;
+    const video = document.getElementById('camView');
+    const canvas = document.getElementById('helperCanvas');
+    const loading = document.getElementById('loading');
+    const resultDiv = document.getElementById('result');
 
-  cv.width = cam.videoWidth;
-  cv.height = cam.videoHeight;
-  cv.getContext("2d").drawImage(cam, 0, 0);
+    // Init Camera
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(s => video.srcObject = s)
+        .catch(() => alert("Camera Error: Please allow access and use HTTPS."));
 
-  // Compression is key to avoid payload size errors
-  const imgData = cv.toDataURL("image/jpeg", 0.5).split(",")[1];
+    document.getElementById('captureBtn').onclick = async () => {
+        if (!video.videoWidth) return;
 
-  document.getElementById("overlay").style.display = "flex";
-  document.getElementById("type").innerText = "Analysing...";
+        // Smart Resizing: Shrink image for faster API response
+        const scale = 0.5;
+        canvas.width = video.videoWidth * scale;
+        canvas.height = video.videoHeight * scale;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const base64Data = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
 
-  try {
-    // Using the stable v1 endpoint for production models
-    const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`;
-    
-    const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: "Identify the item. Is it biodegradable or nonbiodegradable? Reply as: Class: [type], Name: [item]" },
-              {
-                inline_data: { // Note: Use inline_data with an underscore
-                  mime_type: "image/jpeg",
-                  data: imgData
-                }
-              }
-            ]
-          }]
-        })
-      }
-    );
+        loading.style.display = 'flex';
+        document.getElementById('audioL').play().catch(() => {});
 
-    const data = await res.json();
+        try {
+            // New v1beta Endpoint logic
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: "Identify the object. Classify as 'biodegradable' or 'nonbiodegradable'. Respond only in format: Class: [type], Item: [name]" },
+                            { inline_data: { mime_type: "image/jpeg", data: base64Data } } // Corrected property
+                        ]
+                    }],
+                    generationConfig: { temperature: 0.1, maxOutputTokens: 60 }
+                })
+            });
 
-    if (!res.ok) {
-      // If you see "limit: 0" here, you MUST link a billing account in AI Studio
-      throw new Error(data.error?.message || "Check your Billing/Quota in AI Studio");
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error?.message || "Quota Full");
+
+            const aiText = data.candidates[0].content.parts[0].text;
+            const isNonBio = aiText.toLowerCase().includes("non");
+            const name = aiText.split("Name:")[1]?.trim() || "Waste";
+
+            updateUI(isNonBio, name);
+        } catch (err) {
+            alert("Error: " + err.message);
+            resetUI();
+        }
+    };
+
+    function updateUI(isNonBio, name) {
+        loading.style.display = 'none';
+        document.getElementById('audioL').pause();
+        resultDiv.style.display = 'flex';
+        document.getElementById('itemName').innerText = "Detected: " + name;
+
+        if (isNonBio) {
+            resultDiv.style.background = "#fff1f2";
+            document.getElementById('wasteTitle').innerText = "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ";
+            document.getElementById('wasteTitle').style.color = "#e11d48";
+            document.getElementById('resVideo').src = "nonbio.webm";
+            document.getElementById('audioNB').play();
+        } else {
+            resultDiv.style.background = "#f0fdf4";
+            document.getElementById('wasteTitle').innerText = "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
+            document.getElementById('wasteTitle').style.color = "#16a34a";
+            document.getElementById('resVideo').src = "bio.webm";
+            document.getElementById('audioB').play();
+        }
     }
 
-    const text = data.candidates[0].content.parts[0].text;
-    const isNonBio = text.toLowerCase().includes("non");
-    
-    document.getElementById("name").innerText = text;
-    document.getElementById("type").innerText = isNonBio ? "Non-Biodegradable" : "Biodegradable";
-    document.getElementById("overlay").style.background = isNonBio ? "#ffcdd2" : "#c8e6c9";
-
-  } catch (e) {
-    alert("Error: " + e.message);
-    reset();
-  }
-};
+    function resetUI() {
+        resultDiv.style.display = 'none';
+        loading.style.display = 'none';
+        document.getElementById('audioB').pause();
+        document.getElementById('audioNB').pause();
+    }
 </script>
-
 </body>
 </html>
