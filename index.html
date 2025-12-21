@@ -139,8 +139,9 @@
 
 <script>
     // --- CONFIGURATION ---
+    // 1. RE-PASTE YOUR NEW KEY HERE
     const API_KEY = 'AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs'; 
-    const MODEL_NAME = "gemini-1.5-flash"; // Switched to 1.5 for better stability/quota
+    const MODEL_NAME = "gemini-1.5-flash"; 
 
     const video = document.getElementById('videoElement');
     const canvas = document.getElementById('canvas');
@@ -165,27 +166,30 @@
             });
             video.srcObject = stream;
         } catch (err) {
-            alert("Camera Error: Please allow camera access.");
+            alert("Camera Error: Please allow camera access in your browser settings.");
         }
     }
     startCamera();
 
     // Capture and Process
     captureBtn.addEventListener('click', async () => {
-        // Draw image to canvas
+        if (!video.videoWidth) return; // Ensure video is ready
+
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0);
-        const base64Image = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+        
+        // Slightly lower quality (0.6) to stay within request size limits
+        const base64Image = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
 
-        // UI Feedback
         loadingOverlay.style.display = 'flex';
-        loadingSound.play().catch(e => console.log("Audio play blocked"));
+        loadingSound.play().catch(e => console.log("Audio waiting for user interaction"));
 
         try {
             const result = await classifyWaste(base64Image);
             displayResult(result);
         } catch (error) {
+            console.error(error);
             alert(error.message);
         } finally {
             loadingOverlay.style.display = 'none';
@@ -195,12 +199,13 @@
     });
 
     async function classifyWaste(base64Data) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+        // CHANGED: Using v1 stable endpoint for better compatibility
+        const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
         
         const payload = {
             contents: [{
                 parts: [
-                    { text: "Classify this item as 'biodegradable' or 'nonbiodegradable'. Format: Classification: [type], Item: [name]" },
+                    { text: "Identify the object in this image. Is it 'biodegradable' (like food, paper, wood) or 'nonbiodegradable' (like plastic, metal, glass)? Answer strictly in this format: Classification: [type], Item: [name]" },
                     { inline_data: { mime_type: "image/jpeg", data: base64Data } }
                 ]
             }]
@@ -215,15 +220,20 @@
         const data = await response.json();
 
         if (!response.ok) {
-            if (data.error?.message.includes("quota")) {
-                throw new Error("Daily Limit Reached. Please try again later.");
+            if (data.error?.message.toLowerCase().includes("quota")) {
+                throw new Error("Limit Reached: Please wait a few minutes and try again.");
             }
-            throw new Error("API Error: " + data.error.message);
+            throw new Error(`API Error: ${data.error?.message || "Connection failed"}`);
         }
 
         const text = data.candidates[0].content.parts[0].text;
-        const type = text.match(/Classification:\s*(biodegradable|nonbiodegradable)/i)?.[1].toLowerCase() || 'unknown';
-        const name = text.match(/Item:\s*(.*)/i)?.[1] || 'Object';
+        
+        // Improved Regex to catch classification
+        const typeMatch = text.match(/Classification:\s*(biodegradable|nonbiodegradable)/i);
+        const itemMatch = text.match(/Item:\s*(.*)/i);
+
+        const type = typeMatch ? typeMatch[1].toLowerCase() : 'unknown';
+        const name = itemMatch ? itemMatch[1].trim() : 'Object';
 
         return { type, name };
     }
@@ -233,21 +243,23 @@
         itemName.textContent = `Detected: ${result.name}`;
 
         if (result.type === 'biodegradable') {
-            resultOverlay.style.backgroundColor = '#d4edda';
+            resultOverlay.style.backgroundColor = '#d4edda'; // Soft green
             wasteType.textContent = "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
             resultVideo.src = "bio.webm";
-            bioSound.play();
+            bioSound.play().catch(e => {});
         } else if (result.type === 'nonbiodegradable') {
-            resultOverlay.style.backgroundColor = '#f8d7da';
+            resultOverlay.style.backgroundColor = '#f8d7da'; // Soft red
             wasteType.textContent = "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ";
             resultVideo.src = "nonbio.webm";
-            nonBioSound.play();
+            nonBioSound.play().catch(e => {});
         } else {
+            resultOverlay.style.backgroundColor = '#ffffff';
             wasteType.textContent = "Unknown / ଚିହ୍ନଟ ହୋଇପାରିଲା ନାହିଁ";
             resultVideo.src = "";
         }
         
-        resultVideo.play();
+        resultVideo.load();
+        resultVideo.play().catch(e => {});
     }
 
     retryButton.addEventListener('click', () => {
