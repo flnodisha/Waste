@@ -15,6 +15,7 @@
             align-items: center;
             background-color: black;
             overflow-y: auto;
+            font-family: Arial, sans-serif;
         }
 
         #header {
@@ -24,12 +25,12 @@
             width: 100%;
             text-align: center;
             color: white;
-            font-size: 34px;
+            font-size: 24px;
             font-weight: bold;
             z-index: 1000;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            background-color: rgba(0, 0, 0, 0.5);
+            padding: 15px 0;
+            background-color: rgba(0, 0, 0, 0.6);
         }
 
         #videoElement {
@@ -43,14 +44,15 @@
 
         #captureBtn {
             position: absolute;
-            bottom: 30px;
-            width: 70px;
-            height: 70px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: none;
+            bottom: 40px;
+            width: 80px;
+            height: 80px;
+            background-color: white;
+            border: 5px solid rgba(0,0,0,0.2);
             border-radius: 50%;
             cursor: pointer;
-            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.2);
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.4);
+            z-index: 1001;
         }
 
         #loadingOverlay {
@@ -66,11 +68,6 @@
             z-index: 10000;
         }
 
-        #loadingAnimation {
-            width: 350px;
-            height: 350px;
-        }
-
         #resultOverlay {
             position: fixed;
             top: 0;
@@ -82,250 +79,182 @@
             align-items: center;
             flex-direction: column;
             color: black;
-            font-size: 2em;
+            font-size: 1.5em;
             font-weight: bold;
             z-index: 999;
-            transition: background-color 0.5s ease;
             text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
         }
 
-        #resultText {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            margin-top: 60px;
-        }
-
-        #itemName {
-            font-size: 0.8em;
-        }
+        #wasteType { font-size: 1.2em; margin-bottom: 10px; }
+        #itemName { font-size: 0.9em; opacity: 0.8; }
 
         #resultVideo {
-            width: 150px;
-            height: 150px;
-            margin-top: 50px;
-            z-index: 9999;
+            width: 200px;
+            height: 200px;
+            margin-top: 20px;
         }
 
         #retryButton {
-            padding: 10px 20px;
-            margin-top: 20px;
-            background-color: #4CAF50;
+            padding: 12px 30px;
+            margin-top: 30px;
+            background-color: #333;
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 30px;
             cursor: pointer;
-            font-size: 0.6em;
-            display: none;
-        }
-
-        #retryButton:hover {
-            background-color: #45a049;
+            font-size: 0.8em;
         }
     </style>
 </head>
 <body>
+
 <div id="header">ପି. ଏମ୍. ଶ୍ରୀ ସରକାରୀ ଉଚ୍ଚ ବିଦ୍ୟାଳୟ, ଜଗନ୍ନାଥପୁର</div>
 
-    <video id="videoElement" autoplay></video>
-    <canvas id="canvas" style="display: none;"></canvas>
+<video id="videoElement" autoplay playsinline></video>
+<canvas id="canvas" style="display: none;"></canvas>
 
-    <button id="captureBtn"></button>
+<button id="captureBtn"></button>
 
-    <div id="loadingOverlay">
-        <video id="loadingAnimation" autoplay loop muted playsinline>
+<div id="loadingOverlay">
+    <div style="text-align:center;">
+        <video id="loadingAnimation" width="300" height="300" autoplay loop muted playsinline>
             <source src="loading.webm" type="video/webm">
         </video>
+        <p>Analysing / ବିଶ୍ଳେଷଣ କରାଯାଉଛି...</p>
     </div>
+</div>
 
-    <div id="resultOverlay">
-        <div id="resultText">
-            <div id="wasteType"></div>
-            <div id="itemName"></div>
-        </div>
-        <video id="resultVideo" autoplay loop muted playsinline></video>
-        <button id="retryButton">Try Again</button>
-    </div>
+<div id="resultOverlay">
+    <div id="wasteType"></div>
+    <div id="itemName"></div>
+    <video id="resultVideo" autoplay loop muted playsinline></video>
+    <button id="retryButton">Try Again / ପୁଣିଥରେ</button>
+</div>
 
-    <audio id="loadingSound" src="loading.mp3"></audio>
-    <audio id="biodegradableSound" src="bio.mp3"></audio>
-    <audio id="nonbiodegradableSound" src="nonbio.mp3"></audio>
+<audio id="loadingSound" src="loading.mp3"></audio>
+<audio id="biodegradableSound" src="bio.mp3"></audio>
+<audio id="nonbiodegradableSound" src="nonbio.mp3"></audio>
 
 <script>
-const API_KEY = 'AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs';
+    // --- CONFIGURATION ---
+    const API_KEY = 'AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs'; 
+    const MODEL_NAME = "gemini-1.5-flash"; // Switched to 1.5 for better stability/quota
 
-// --- Updated Gemini Model ---
-const MODEL_NAME = "gemini-2.0-flash";
+    const video = document.getElementById('videoElement');
+    const canvas = document.getElementById('canvas');
+    const captureBtn = document.getElementById('captureBtn');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const resultOverlay = document.getElementById('resultOverlay');
+    const wasteType = document.getElementById('wasteType');
+    const itemName = document.getElementById('itemName');
+    const resultVideo = document.getElementById('resultVideo');
+    const retryButton = document.getElementById('retryButton');
 
-const video = document.getElementById('videoElement');
-const canvas = document.getElementById('canvas');
-const captureBtn = document.getElementById('captureBtn');
-const loadingOverlay = document.getElementById('loadingOverlay');
-const resultOverlay = document.getElementById('resultOverlay');
-const wasteType = document.getElementById('wasteType');
-const itemName = document.getElementById('itemName');
-const resultVideo = document.getElementById('resultVideo');
-const retryButton = document.getElementById('retryButton');
+    // Audio
+    const loadingSound = document.getElementById('loadingSound');
+    const bioSound = document.getElementById('biodegradableSound');
+    const nonBioSound = document.getElementById('nonbiodegradableSound');
 
-const loadingSound = document.getElementById('loadingSound');
-const biodegradableSound = document.getElementById('biodegradableSound');
-const nonbiodegradableSound = document.getElementById('nonbiodegradableSound');
-
-async function startCamera() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: 'environment',
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            }
-        });
-        video.srcObject = stream;
-    } catch (err) {
-        console.error('Error:', err);
-        alert('Error accessing camera. Please ensure camera permissions are granted.');
+    // Start Camera
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' }
+            });
+            video.srcObject = stream;
+        } catch (err) {
+            alert("Camera Error: Please allow camera access.");
+        }
     }
-}
+    startCamera();
 
-startCamera();
+    // Capture and Process
+    captureBtn.addEventListener('click', async () => {
+        // Draw image to canvas
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const base64Image = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 
-function hideResult() {
-    resultOverlay.style.display = 'none';
-    retryButton.style.display = 'none';
-    stopAudio(biodegradableSound);
-    stopAudio(nonbiodegradableSound);
-}
+        // UI Feedback
+        loadingOverlay.style.display = 'flex';
+        loadingSound.play().catch(e => console.log("Audio play blocked"));
 
-retryButton.addEventListener('click', () => {
-    hideResult();
-});
-
-captureBtn.addEventListener('click', async () => {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const imageBase64 = canvas.toDataURL('image/jpeg', 0.8);
-
-    loadingOverlay.style.display = 'flex';
-    playAudio(loadingSound);
-
-    try {
-        const { classification, itemDetected } = await classifyWaste(imageBase64);
-
-        stopAudio(loadingSound);
-        retryButton.style.display = 'none';
-
-        resultOverlay.style.display = 'flex';
-
-        if (classification === 'unknown') {
-            resultOverlay.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
-            wasteType.textContent = 'Unknown Object';
-            wasteType.style.color = 'black';
-            itemName.style.color = 'black';
-            retryButton.style.display = 'block';
-            resultVideo.style.display = 'none';
-        } else {
-            retryButton.style.display = 'none';
-            resultVideo.style.display = 'block';
-
-            switch (classification) {
-                case 'biodegradable':
-                    resultOverlay.style.backgroundColor = '#b9fab9';
-                    wasteType.textContent = 'Biodegradable (ମାଟିରେ ମିଶିଯିବ)';
-                    playAudio(biodegradableSound);
-                    resultVideo.src = 'bio.webm';
-                    break;
-                case 'nonbiodegradable':
-                    resultOverlay.style.backgroundColor = '#f87b7b';
-                    wasteType.textContent = 'Non-Biodegradable (ମାଟିରେ ମିଶିବ ନାହିଁ)';
-                    playAudio(nonbiodegradableSound);
-                    resultVideo.src = 'nonbio.webm';
-                    break;
-            }
+        try {
+            const result = await classifyWaste(base64Image);
+            displayResult(result);
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            loadingOverlay.style.display = 'none';
+            loadingSound.pause();
+            loadingSound.currentTime = 0;
         }
+    });
 
-        itemName.textContent = `Detected Item: ${itemDetected}`;
-        resultVideo.load();
-        resultVideo.play();
+    async function classifyWaste(base64Data) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+        
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: "Classify this item as 'biodegradable' or 'nonbiodegradable'. Format: Classification: [type], Item: [name]" },
+                    { inline_data: { mime_type: "image/jpeg", data: base64Data } }
+                ]
+            }]
+        };
 
-        if (classification !== 'unknown') {
-            setTimeout(hideResult, 10000);
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        loadingOverlay.style.display = 'none';
-    }
-});
-
-function playAudio(audioElement) {
-    audioElement.currentTime = 0;
-    audioElement.play();
-}
-
-function stopAudio(audioElement) {
-    audioElement.pause();
-    audioElement.currentTime = 0;
-}
-
-async function classifyWaste(imageBase64) {
-
-    const API_URL = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
-
-    const prompt = "Analyze this image and provide two pieces of information: 'Classification: [biodegradable/nonbiodegradable/unknown], Item: [name of the item]'. If you cannot identify, respond unknown.";
-
-    const base64Image = imageBase64.split(',')[1];
-
-    const requestData = {
-        contents: [{
-            parts: [
-                { text: prompt },
-                {
-                    inline_data: {
-                        mime_type: "image/jpeg",
-                        data: base64Image
-                    }
-                }
-            ]
-        }],
-        generation_config: {
-            temperature: 0.1,
-            top_p: 0.8,
-            top_k: 10,
-            max_output_tokens: 1024
-        }
-    };
-
-    try {
-        const response = await fetch(API_URL, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestData)
+            body: JSON.stringify(payload)
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error?.message || 'API request failed');
+            if (data.error?.message.includes("quota")) {
+                throw new Error("Daily Limit Reached. Please try again later.");
+            }
+            throw new Error("API Error: " + data.error.message);
         }
 
-        const data = await response.json();
-        const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const text = data.candidates[0].content.parts[0].text;
+        const type = text.match(/Classification:\s*(biodegradable|nonbiodegradable)/i)?.[1].toLowerCase() || 'unknown';
+        const name = text.match(/Item:\s*(.*)/i)?.[1] || 'Object';
 
-        const classificationMatch = responseText.match(/Classification:\s*(biodegradable|nonbiodegradable|unknown)/i);
-        const itemMatch = responseText.match(/Item:\s*([^,\n]+)/i);
-
-        const classification = classificationMatch ? classificationMatch[1].toLowerCase() : 'unknown';
-        const itemDetected = itemMatch ? itemMatch[1].trim() : 'Unknown object';
-
-        return { classification, itemDetected };
-
-    } catch (error) {
-        console.error('Classification error:', error);
-        throw error;
+        return { type, name };
     }
-}
+
+    function displayResult(result) {
+        resultOverlay.style.display = 'flex';
+        itemName.textContent = `Detected: ${result.name}`;
+
+        if (result.type === 'biodegradable') {
+            resultOverlay.style.backgroundColor = '#d4edda';
+            wasteType.textContent = "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
+            resultVideo.src = "bio.webm";
+            bioSound.play();
+        } else if (result.type === 'nonbiodegradable') {
+            resultOverlay.style.backgroundColor = '#f8d7da';
+            wasteType.textContent = "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ";
+            resultVideo.src = "nonbio.webm";
+            nonBioSound.play();
+        } else {
+            wasteType.textContent = "Unknown / ଚିହ୍ନଟ ହୋଇପାରିଲା ନାହିଁ";
+            resultVideo.src = "";
+        }
+        
+        resultVideo.play();
+    }
+
+    retryButton.addEventListener('click', () => {
+        resultOverlay.style.display = 'none';
+        bioSound.pause();
+        nonBioSound.pause();
+    });
 </script>
 
 </body>
