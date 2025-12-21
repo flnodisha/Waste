@@ -39,6 +39,7 @@ video{
   background:white;
   border:6px solid #4CAF50;
   z-index:20;
+  cursor: pointer;
 }
 #overlay{
   position:fixed;
@@ -50,11 +51,13 @@ video{
   background:white;
   color:black;
   text-align:center;
+  z-index: 100;
 }
 button{
   margin-top:20px;
   padding:10px 30px;
   font-size:16px;
+  cursor: pointer;
 }
 </style>
 </head>
@@ -64,26 +67,26 @@ button{
 <div id="header">PM Shri School – Waste Classifier</div>
 
 <video id="cam" autoplay playsinline></video>
-<canvas id="cv" hidden></canvas>
+<canvas id="cv" style="display:none;"></canvas>
 <div id="btn"></div>
 
 <div id="overlay">
   <h1 id="type">Analysing...</h1>
-  <p id="name"></p>
+  <p id="name" style="font-size: 1.2rem;"></p>
   <button onclick="reset()">Try Again</button>
 </div>
 
 <script>
-// ⚠️ TEMPORARY – REMOVE AFTER DEMO
 const API_KEY = "AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs";
-const MODEL = "gemini-1.5-pro";
+// Switch to flash for speed/free quota, or keep pro if you have credits
+const MODEL = "gemini-1.5-flash"; 
 
 const cam = document.getElementById("cam");
 const cv = document.getElementById("cv");
 
 navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
 .then(s => cam.srcObject = s)
-.catch(()=>alert("Please allow camera"));
+.catch(()=>alert("Please allow camera access."));
 
 document.getElementById("btn").onclick = async ()=>{
   if(!cam.videoWidth) return;
@@ -92,60 +95,65 @@ document.getElementById("btn").onclick = async ()=>{
   cv.height = cam.videoHeight;
   cv.getContext("2d").drawImage(cam,0,0);
 
-  const img = cv.toDataURL("image/jpeg",0.5).split(",")[1];
+  // Compress to stay within request size limits
+  const imgData = cv.toDataURL("image/jpeg", 0.5).split(",")[1];
 
   document.getElementById("overlay").style.display="flex";
   document.getElementById("type").innerText="Analysing...";
-  document.getElementById("name").innerText="";
+  document.getElementById("name").innerText="Please wait...";
 
   try{
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`,
-      {
+    // UPDATED URL: Using v1beta for better browser compatibility
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+    
+    const res = await fetch(url, {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({
           contents:[{
             parts:[
+              { text: "Identify this item. Is it 'biodegradable' or 'nonbiodegradable'? Format: Class: [type], Name: [item]" },
               {
-                text:
-                "Identify the waste item. Reply ONLY in this format: Class: Biodegradable or Non-Biodegradable, Name: item"
-              },
-              {
-                inlineData:{          // ✅ FIXED
-                  mimeType:"image/jpeg",
-                  data:img
+                inline_data:{      // ✅ FIXED: Used underscore as per API specs
+                  mime_type:"image/jpeg",
+                  data:imgData
                 }
               }
             ]
-          }],
-          generationConfig:{
-            temperature:0.1,
-            maxOutputTokens:50
-          }
+          }]
         })
       }
     );
 
     const data = await res.json();
 
-    if(!data.candidates){
-      throw new Error("API failed");
+    if(!res.ok){
+      // Catch Quota Errors specifically
+      if(data.error?.message.includes("quota")) {
+        throw new Error("Quota Full: Please wait 60 seconds.");
+      }
+      throw new Error(data.error?.message || "API request failed");
     }
 
-    const text = data.candidates[0].content.parts[0].text.toLowerCase();
-    document.getElementById("name").innerText=text;
+    if(!data.candidates || data.candidates.length === 0){
+      throw new Error("Could not identify item. Try again.");
+    }
 
-    if(text.includes("non")){
+    const text = data.candidates[0].content.parts[0].text;
+    const isNonBio = text.toLowerCase().includes("nonbiodegradable") || text.toLowerCase().includes("non-bio");
+    
+    document.getElementById("name").innerText = text;
+
+    if(isNonBio){
       document.getElementById("type").innerText="Non-Biodegradable";
       document.getElementById("overlay").style.background="#ffcdd2";
-    }else{
+    } else {
       document.getElementById("type").innerText="Biodegradable";
       document.getElementById("overlay").style.background="#c8e6c9";
     }
 
   }catch(e){
-    alert("Network / API error. Try again.");
+    alert("Error: " + e.message);
     reset();
   }
 };
