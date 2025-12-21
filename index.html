@@ -77,46 +77,38 @@ button{
 </div>
 
 <script>
-const API_KEY = "AIzaSyDrdDLOwGIRUfO9ZjP4rFeBIuzDB1O6taU";
-// Switch to flash for speed/free quota, or keep pro if you have credits
-const MODEL = "gemini-1.5-flash"; 
+const API_KEY = "AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs";
+// Updated to the latest stable model as of late 2025
+const MODEL = "gemini-2.0-flash"; 
 
-const cam = document.getElementById("cam");
-const cv = document.getElementById("cv");
-
-navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
-.then(s => cam.srcObject = s)
-.catch(()=>alert("Please allow camera access."));
-
-document.getElementById("btn").onclick = async ()=>{
+document.getElementById("btn").onclick = async () => {
   if(!cam.videoWidth) return;
 
   cv.width = cam.videoWidth;
   cv.height = cam.videoHeight;
-  cv.getContext("2d").drawImage(cam,0,0);
+  cv.getContext("2d").drawImage(cam, 0, 0);
 
-  // Compress to stay within request size limits
+  // Compression is key to avoid payload size errors
   const imgData = cv.toDataURL("image/jpeg", 0.5).split(",")[1];
 
-  document.getElementById("overlay").style.display="flex";
-  document.getElementById("type").innerText="Analysing...";
-  document.getElementById("name").innerText="Please wait...";
+  document.getElementById("overlay").style.display = "flex";
+  document.getElementById("type").innerText = "Analysing...";
 
-  try{
-    // UPDATED URL: Using v1beta for better browser compatibility
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+  try {
+    // Using the stable v1 endpoint for production models
+    const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`;
     
     const res = await fetch(url, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents:[{
-            parts:[
-              { text: "Identify this item. Is it 'biodegradable' or 'nonbiodegradable'? Format: Class: [type], Name: [item]" },
+          contents: [{
+            parts: [
+              { text: "Identify the item. Is it biodegradable or nonbiodegradable? Reply as: Class: [type], Name: [item]" },
               {
-                inline_data:{      // ✅ FIXED: Used underscore as per API specs
-                  mime_type:"image/jpeg",
-                  data:imgData
+                inline_data: { // Note: Use inline_data with an underscore
+                  mime_type: "image/jpeg",
+                  data: imgData
                 }
               }
             ]
@@ -127,40 +119,23 @@ document.getElementById("btn").onclick = async ()=>{
 
     const data = await res.json();
 
-    if(!res.ok){
-      // Catch Quota Errors specifically
-      if(data.error?.message.includes("quota")) {
-        throw new Error("Quota Full: Please wait 60 seconds.");
-      }
-      throw new Error(data.error?.message || "API request failed");
-    }
-
-    if(!data.candidates || data.candidates.length === 0){
-      throw new Error("Could not identify item. Try again.");
+    if (!res.ok) {
+      // If you see "limit: 0" here, you MUST link a billing account in AI Studio
+      throw new Error(data.error?.message || "Check your Billing/Quota in AI Studio");
     }
 
     const text = data.candidates[0].content.parts[0].text;
-    const isNonBio = text.toLowerCase().includes("nonbiodegradable") || text.toLowerCase().includes("non-bio");
+    const isNonBio = text.toLowerCase().includes("non");
     
     document.getElementById("name").innerText = text;
+    document.getElementById("type").innerText = isNonBio ? "Non-Biodegradable" : "Biodegradable";
+    document.getElementById("overlay").style.background = isNonBio ? "#ffcdd2" : "#c8e6c9";
 
-    if(isNonBio){
-      document.getElementById("type").innerText="Non-Biodegradable";
-      document.getElementById("overlay").style.background="#ffcdd2";
-    } else {
-      document.getElementById("type").innerText="Biodegradable";
-      document.getElementById("overlay").style.background="#c8e6c9";
-    }
-
-  }catch(e){
+  } catch (e) {
     alert("Error: " + e.message);
     reset();
   }
 };
-
-function reset(){
-  document.getElementById("overlay").style.display="none";
-}
 </script>
 
 </body>
