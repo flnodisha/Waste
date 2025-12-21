@@ -32,9 +32,12 @@
 </div>
 
 <script>
-    // --- IMPORTANT: Ensure billing is linked in Google AI Studio for this key ---
+    // 1. YOUR API KEY (Ensure this key is from the project with billing enabled)
     const API_KEY = "AIzaSyBdVv6PL2d0imbo6DLXjn5uwqDEqTUa4os";
-    const MODEL = "gemini-1.5-flash"; // Recommended for free tier stability
+    
+    // 2. We use two models. If one is "Not Found", it tries the other.
+    const PRIMARY_MODEL = "gemini-1.5-flash-latest"; 
+    const FALLBACK_MODEL = "gemini-1.5-pro-latest";
 
     const cam = document.getElementById("cam");
     const cv = document.getElementById("cv");
@@ -44,43 +47,61 @@
 
     document.getElementById("captureBtn").onclick = async () => {
         if (!cam.videoWidth) return;
-        cv.width = cam.videoWidth / 2; // Resize for speed
+        
+        // 3. Resize and compress to prevent "Request Payload Too Large"
+        cv.width = cam.videoWidth / 2;
         cv.height = cam.videoHeight / 2;
         cv.getContext("2d").drawImage(cam, 0, 0, cv.width, cv.height);
-        
-        const imgBase64 = cv.toDataURL("image/jpeg", 0.6).split(",")[1];
+        const imgBase64 = cv.toDataURL("image/jpeg", 0.5).split(",")[1];
+
         document.getElementById("loading").style.display = "flex";
 
         try {
-            // FIXED: Using v1beta for model compatibility
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
-            
-            const response = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            { text: "Classify as 'biodegradable' or 'nonbiodegradable'. Respond only: Class: [type], Item: [name]" },
-                            { inline_data: { mime_type: "image/jpeg", data: imgBase64 } } // Corrected key
-                        ]
-                    }]
-                })
-            });
-
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error?.message || "Quota limit hit. Link billing account.");
-
-            const text = data.candidates[0].content.parts[0].text;
-            const isNonBio = text.toLowerCase().includes("non");
-            const name = text.split("Name:")[1]?.trim() || "Item";
-
-            showResult(isNonBio, name);
+            let result;
+            try {
+                // Try Primary Model
+                result = await callGemini(imgBase64, PRIMARY_MODEL);
+            } catch (err) {
+                if (err.message.includes("not found")) {
+                    console.warn("Primary model not found, trying fallback...");
+                    result = await callGemini(imgBase64, FALLBACK_MODEL);
+                } else {
+                    throw err;
+                }
+            }
+            showResult(result.isNonBio, result.name);
         } catch (err) {
             alert("System Error: " + err.message);
             document.getElementById("loading").style.display = "none";
         }
     };
+
+    async function callGemini(base64, modelName) {
+        // 4. Using v1beta with the "-latest" suffix is the most stable configuration
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+        
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [
+                        { text: "Classify as 'biodegradable' or 'nonbiodegradable'. Respond only: Class: [type], Item: [name]" },
+                        { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                    ]
+                }]
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || "API Error");
+
+        const text = data.candidates[0].content.parts[0].text;
+        return {
+            isNonBio: text.toLowerCase().includes("non"),
+            name: text.split("Name:")[1]?.trim() || "Item"
+        };
+    }
 
     function showResult(isNonBio, name) {
         document.getElementById("loading").style.display = "none";
