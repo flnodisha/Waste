@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>School Waste Classifier</title>
+    <title>Waste Classifier - PM Shri School</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: white; font-family: sans-serif; overflow: hidden; }
-        #header { position: absolute; top: 0; width: 100%; text-align: center; background: rgba(0,0,0,0.8); padding: 15px 0; z-index: 10; font-size: 1.2rem; }
+        #header { position: absolute; top: 0; width: 100%; text-align: center; background: rgba(0,0,0,0.8); padding: 15px 0; z-index: 10; font-size: 1.2rem; border-bottom: 2px solid #4CAF50; }
         #videoElement { width: 100%; height: 100%; object-fit: cover; }
-        #captureBtn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 80px; height: 80px; background: white; border: 6px solid #4CAF50; border-radius: 50%; cursor: pointer; z-index: 11; }
+        #captureBtn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 80px; height: 80px; background: white; border: 6px solid #4CAF50; border-radius: 50%; cursor: pointer; z-index: 11; box-shadow: 0 0 20px rgba(76, 175, 80, 0.5); }
         #loading, #result { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; text-align: center; padding: 20px; box-sizing: border-box; }
         #loading { background: white; color: #4CAF50; }
-        #result { color: #000; }
+        #result { color: #000; transition: background 0.5s ease; }
         .retry-btn { margin-top: 25px; padding: 12px 30px; background: #333; color: white; border: none; border-radius: 25px; cursor: pointer; font-size: 1rem; }
     </style>
 </head>
@@ -23,21 +23,28 @@
 <button id="captureBtn"></button>
 
 <div id="loading">
-    <h2 id="loadingText">ବିଶ୍ଳେଷଣ ଚାଲିଛି... (Analyzing)</h2>
-    <p>Please hold still.</p>
+    <video width="250" autoplay loop muted playsinline>
+        <source src="loading.webm" type="video/webm">
+    </video>
+    <h2>ବିଶ୍ଳେଷଣ ଚାଲିଛି...</h2>
+    <p>Wait, we are identifying the item.</p>
 </div>
 
 <div id="result">
     <h1 id="wasteTitle"></h1>
     <p id="itemName" style="font-size: 1.3rem;"></p>
     <video id="resVideo" width="200" autoplay loop muted playsinline></video>
-    <button class="retry-btn" onclick="location.reload()">Try Again / ପୁଣିଥରେ</button>
+    <button class="retry-btn" onclick="resetUI()">Try Again / ପୁଣିଥରେ</button>
 </div>
 
+<audio id="soundL" src="loading.mp3"></audio>
+<audio id="soundB" src="bio.mp3"></audio>
+<audio id="soundNB" src="nonbio.mp3"></audio>
+
 <script>
-    // --- STEP 1: USE YOUR FREE API KEY HERE ---
+    // --- STEP 1: USE YOUR NEW API KEY ---
     const API_KEY = 'AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs'; 
-    const MODEL = "gemini-1.5-flash"; // The best free model for images
+    const MODEL = "gemini-1.5-flash"; 
 
     const video = document.getElementById('videoElement');
     const canvas = document.getElementById('canvas');
@@ -46,19 +53,24 @@
 
     // Start Camera
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(s => video.srcObject = s).catch(() => alert("Camera blocked!"));
+        .then(s => video.srcObject = s).catch(() => alert("Camera blocked! Go to browser settings and allow camera."));
 
     document.getElementById('captureBtn').onclick = async () => {
+        if (!video.videoWidth) return;
+
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0);
+        
+        // Lower quality to 0.5 to stay within free tier limits
         const base64Img = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
 
         loading.style.display = 'flex';
+        document.getElementById('soundL').play().catch(() => {});
 
         try {
-            // FIXED URL: Using /v1/models for stability
-            const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`;
+            // UPDATED URL: Using v1beta for reliable 1.5-flash access
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
             
             const response = await fetch(url, {
                 method: 'POST',
@@ -66,29 +78,39 @@
                 body: JSON.stringify({
                     contents: [{
                         parts: [
-                            { text: "Is this item biodegradable or nonbiodegradable? Reply exactly: Class: [type], Name: [item name]" },
+                            { text: "Task: Waste identification. Is this biodegradable or nonbiodegradable? Format: Class: [type], Name: [item]" },
                             { inline_data: { mime_type: "image/jpeg", data: base64Img } }
                         ]
-                    }]
+                    }],
+                    generationConfig: { temperature: 0.1, maxOutputTokens: 60 }
                 })
             });
 
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error?.message || "Check API Key/Quota");
+            
+            if (!response.ok) {
+                // Specific handling for quota limits
+                if (data.error?.message.includes("quota")) {
+                    throw new Error("Free limit reached. Wait 60 seconds or link billing to your project.");
+                }
+                throw new Error(data.error?.message || "Check API configuration.");
+            }
 
             const text = data.candidates[0].content.parts[0].text;
-            const isBio = text.toLowerCase().includes("biodegradable") && !text.toLowerCase().includes("non");
-            const name = text.split("Name:")[1]?.trim() || "Item";
+            const isNonBio = text.toLowerCase().includes("nonbiodegradable") || text.toLowerCase().includes("non-bio");
+            const isBio = text.toLowerCase().includes("biodegradable") && !isNonBio;
+            const name = text.split("Name:")[1]?.trim() || "Waste Item";
 
-            showResult(isBio, name);
+            showResult(isBio, isNonBio, name);
         } catch (err) {
             alert("Error: " + err.message);
-            loading.style.display = 'none';
+            resetUI();
         }
     };
 
-    function showResult(isBio, name) {
+    function showResult(isBio, isNonBio, name) {
         loading.style.display = 'none';
+        document.getElementById('soundL').pause();
         resultDiv.style.display = 'flex';
         document.getElementById('itemName').innerText = "Detected: " + name;
 
@@ -96,11 +118,23 @@
             resultDiv.style.backgroundColor = "#c8e6c9";
             document.getElementById('wasteTitle').innerText = "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
             document.getElementById('resVideo').src = "bio.webm";
-        } else {
+            document.getElementById('soundB').play();
+        } else if (isNonBio) {
             resultDiv.style.backgroundColor = "#ffcdd2";
             document.getElementById('wasteTitle').innerText = "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ";
             document.getElementById('resVideo').src = "nonbio.webm";
+            document.getElementById('soundNB').play();
+        } else {
+            document.getElementById('wasteTitle').innerText = "Unknown Item / ଅଜଣା ବସ୍ତୁ";
+            resultDiv.style.backgroundColor = "#f0f0f0";
         }
+    }
+
+    function resetUI() {
+        resultDiv.style.display = 'none';
+        loading.style.display = 'none';
+        document.getElementById('soundB').pause();
+        document.getElementById('soundNB').pause();
     }
 </script>
 </body>
