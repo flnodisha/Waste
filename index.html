@@ -3,210 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Waste Classifier - PM Shri School</title>
+    <title>School Waste Classifier</title>
     <style>
-        body, html {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            display: flex; justify-content: center; align-items: center;
-            background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        #header {
-            position: absolute; top: 0; width: 100%; text-align: center;
-            color: white; font-size: 20px; padding: 15px 0;
-            background: rgba(0,0,0,0.7); z-index: 10;
-        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: white; font-family: sans-serif; overflow: hidden; }
+        #header { position: absolute; top: 0; width: 100%; text-align: center; background: rgba(0,0,0,0.8); padding: 15px 0; z-index: 10; font-size: 1.2rem; }
         #videoElement { width: 100%; height: 100%; object-fit: cover; }
-        #captureBtn {
-            position: absolute; bottom: 30px; width: 70px; height: 70px;
-            background: white; border: 5px solid #4CAF50; border-radius: 50%;
-            cursor: pointer; z-index: 11;
-        }
-        #loadingOverlay, #resultOverlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            display: none; flex-direction: column; justify-content: center;
-            align-items: center; z-index: 100; text-align: center; padding: 20px;
-            box-sizing: border-box;
-        }
-        #loadingOverlay { background: white; }
-        #resultOverlay { color: #000; font-weight: bold; }
-        #resultVideo { width: 180px; height: 180px; margin: 20px 0; }
-        .btn-retry {
-            padding: 10px 25px; background: #333; color: white;
-            border: none; border-radius: 20px; cursor: pointer; margin-top: 20px;
-        }
+        #captureBtn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 80px; height: 80px; background: white; border: 6px solid #4CAF50; border-radius: 50%; cursor: pointer; z-index: 11; }
+        #loading, #result { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; text-align: center; padding: 20px; box-sizing: border-box; }
+        #loading { background: white; color: #4CAF50; }
+        #result { color: #000; }
+        .retry-btn { margin-top: 25px; padding: 12px 30px; background: #333; color: white; border: none; border-radius: 25px; cursor: pointer; font-size: 1rem; }
     </style>
 </head>
 <body>
 
 <div id="header">ପି. ଏମ୍. ଶ୍ରୀ ସରକାରୀ ଉଚ୍ଚ ବିଦ୍ୟାଳୟ, ଜଗନ୍ନାଥପୁର</div>
-
 <video id="videoElement" autoplay playsinline></video>
-<canvas id="canvas" style="display: none;"></canvas>
+<canvas id="canvas" style="display:none;"></canvas>
 <button id="captureBtn"></button>
 
-<div id="loadingOverlay">
-    <video width="250" autoplay loop muted playsinline>
-        <source src="loading.webm" type="video/webm">
-    </video>
-    <h2 style="color: #4CAF50;">ବିଶ୍ଳେଷଣ ଚାଲିଛି...</h2>
-    <p>Please wait while we check the item.</p>
+<div id="loading">
+    <h2 id="loadingText">ବିଶ୍ଳେଷଣ ଚାଲିଛି... (Analyzing)</h2>
+    <p>Please hold still.</p>
 </div>
 
-<div id="resultOverlay">
-    <h1 id="wasteType"></h1>
-    <p id="itemName" style="font-size: 1.2rem;"></p>
-    <video id="resultVideo" autoplay loop muted playsinline></video>
-    <button class="btn-retry" onclick="resetUI()">Try Again / ପୁଣିଥରେ</button>
+<div id="result">
+    <h1 id="wasteTitle"></h1>
+    <p id="itemName" style="font-size: 1.3rem;"></p>
+    <video id="resVideo" width="200" autoplay loop muted playsinline></video>
+    <button class="retry-btn" onclick="location.reload()">Try Again / ପୁଣିଥରେ</button>
 </div>
-
-<audio id="soundL" src="loading.mp3"></audio>
-<audio id="soundB" src="bio.mp3"></audio>
-<audio id="soundNB" src="nonbio.mp3"></audio>
 
 <script>
-    // 1. RE-PASTE YOUR NEW API KEY HERE
+    // --- STEP 1: USE YOUR FREE API KEY HERE ---
     const API_KEY = 'AIzaSyALj-znCE7iEIkIMWk4PTlVEVsJNR-cxxs'; 
-    
-    // 2. We will use a primary and a backup model to ensure it works
-    const PRIMARY_MODEL = "gemini-1.5-flash";
-    const BACKUP_MODEL = "gemini-1.5-pro";
+    const MODEL = "gemini-1.5-flash"; // The best free model for images
 
     const video = document.getElementById('videoElement');
     const canvas = document.getElementById('canvas');
-    const captureBtn = document.getElementById('captureBtn');
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    const resultOverlay = document.getElementById('resultOverlay');
+    const loading = document.getElementById('loading');
+    const resultDiv = document.getElementById('result');
 
     // Start Camera
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        .then(stream => { video.srcObject = stream; })
-        .catch(err => alert("Camera access denied. Please enable it in browser settings."));
+        .then(s => video.srcObject = s).catch(() => alert("Camera blocked!"));
 
-    captureBtn.onclick = async () => {
-        if (!video.videoWidth) return;
-        
+    document.getElementById('captureBtn').onclick = async () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d').drawImage(video, 0, 0);
-        
-        // Use a lower compression (0.5) to make the request faster and avoid size errors
         const base64Img = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
 
-        loadingOverlay.style.display = 'flex';
-        const lSound = document.getElementById('soundL');
-        if(lSound) lSound.play().catch(() => {});
+        loading.style.display = 'flex';
 
         try {
-            // Try with Primary Model
-            let result;
-            try {
-                result = await callGemini(base64Img, PRIMARY_MODEL);
-            } catch (e) {
-                console.warn("Primary model failed, trying backup...");
-                result = await callGemini(base64Img, BACKUP_MODEL);
-            }
-            showResult(result);
+            // FIXED URL: Using /v1/models for stability
+            const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${API_KEY}`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: "Is this item biodegradable or nonbiodegradable? Reply exactly: Class: [type], Name: [item name]" },
+                            { inline_data: { mime_type: "image/jpeg", data: base64Img } }
+                        ]
+                    }]
+                })
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error?.message || "Check API Key/Quota");
+
+            const text = data.candidates[0].content.parts[0].text;
+            const isBio = text.toLowerCase().includes("biodegradable") && !text.toLowerCase().includes("non");
+            const name = text.split("Name:")[1]?.trim() || "Item";
+
+            showResult(isBio, name);
         } catch (err) {
-            console.error(err);
-            alert("System Error: " + err.message + "\n\nTip: Check if your API key is restricted to specific services in Google Cloud Console.");
-            resetUI();
+            alert("Error: " + err.message);
+            loading.style.display = 'none';
         }
     };
 
-    async function callGemini(base64Data, modelName) {
-        // This specific URL format is the most stable for browser-based fetch
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
-        
-        const requestBody = {
-            contents: [{
-                parts: [
-                    { text: "Task: Waste Classification. Identify if the item is 'biodegradable' or 'nonbiodegradable'. Respond ONLY in this format: Class: [type], Name: [name]" },
-                    { inline_data: { mime_type: "image/jpeg", data: base64Data } }
-                ]
-            }],
-            generationConfig: {
-                temperature: 0.4,
-                topK: 32,
-                topP: 1,
-                maxOutputTokens: 100,
-            }
-        };
+    function showResult(isBio, name) {
+        loading.style.display = 'none';
+        resultDiv.style.display = 'flex';
+        document.getElementById('itemName').innerText = "Detected: " + name;
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            // Detailed error reporting for debugging
-            const msg = data.error?.message || "Unknown API Error";
-            throw new Error(msg);
-        }
-
-        if (!data.candidates || data.candidates.length === 0) {
-            throw new Error("No identification found. Try a clearer photo.");
-        }
-
-        const text = data.candidates[0].content.parts[0].text;
-        const isNonBio = text.toLowerCase().includes("nonbiodegradable") || text.toLowerCase().includes("non-biodegradable");
-        const isBio = text.toLowerCase().includes("biodegradable") && !isNonBio;
-        
-        // Extract name safely
-        let name = "Object";
-        if (text.includes("Name:")) {
-            name = text.split("Name:")[1].trim().split("\n")[0];
-        }
-
-        return { 
-            type: isNonBio ? 'nonbio' : (isBio ? 'bio' : 'unknown'),
-            name: name
-        };
-    }
-
-    function showResult(res) {
-        loadingOverlay.style.display = 'none';
-        const lSound = document.getElementById('soundL');
-        if(lSound) lSound.pause();
-        
-        resultOverlay.style.display = 'flex';
-        
-        const typeTitle = document.getElementById('wasteType');
-        const itemText = document.getElementById('itemName');
-        const resVid = document.getElementById('resultVideo');
-
-        itemText.innerText = "Item: " + res.name;
-
-        if (res.type === 'bio') {
-            resultOverlay.style.backgroundColor = "#c8e6c9";
-            typeTitle.innerText = "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
-            resVid.src = "bio.webm";
-            const bSound = document.getElementById('soundB');
-            if(bSound) bSound.play().catch(() => {});
-        } else if (res.type === 'nonbio') {
-            resultOverlay.style.backgroundColor = "#ffcdd2";
-            typeTitle.innerText = "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ";
-            resVid.src = "nonbio.webm";
-            const nbSound = document.getElementById('soundNB');
-            if(nbSound) nbSound.play().catch(() => {});
+        if (isBio) {
+            resultDiv.style.backgroundColor = "#c8e6c9";
+            document.getElementById('wasteTitle').innerText = "Biodegradable / ମାଟିରେ ମିଶିଯିବ";
+            document.getElementById('resVideo').src = "bio.webm";
         } else {
-            resultOverlay.style.backgroundColor = "#ffffff";
-            typeTitle.innerText = "Unknown / ଅଜଣା ବସ୍ତୁ";
-            resVid.src = "";
+            resultDiv.style.backgroundColor = "#ffcdd2";
+            document.getElementById('wasteTitle').innerText = "Non-Biodegradable / ମାଟିରେ ମିଶିବ ନାହିଁ";
+            document.getElementById('resVideo').src = "nonbio.webm";
         }
-        resVid.load();
-        resVid.play().catch(() => {});
-    }
-
-    function resetUI() {
-        resultOverlay.style.display = 'none';
-        loadingOverlay.style.display = 'none';
-        const bSound = document.getElementById('soundB');
-        const nbSound = document.getElementById('soundNB');
-        if(bSound) bSound.pause();
-        if(nbSound) nbSound.pause();
     }
 </script>
 </body>
